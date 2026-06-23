@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jet Stream and Rossby Wave Laboratory</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: #010206;
+        }
+        canvas { display: block; }
+        #info-panel {
+            position: absolute;
+            top: 18px;
+            left: 18px;
+            width: 390px;
+            max-width: calc(100vw - 36px);
+            padding: 20px;
+            color: white;
+            background: rgba(7, 12, 25, 0.93);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 14px;
+            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.65);
+            backdrop-filter: blur(8px);
+            z-index: 10;
+        }
+        #info-panel h1 {
+            margin: 0 0 10px 0;
+            color: #4fc3f7;
+            font-size: 20px;
+            font-weight: 650;
+        }
+        #info-panel p {
+            margin: 7px 0;
+            color: #c4ced6;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .equation {
+            margin: 13px 0;
+            padding: 10px 12px;
+            color: #e3f2fd;
+            background: rgba(255, 255, 255, 0.055);
+            border-left: 3px solid #4fc3f7;
+            border-radius: 5px;
+            font-family: Georgia, serif;
+            font-size: 14px;
+            text-align: center;
+        }
+        .stats-container {
+            margin-top: 15px;
+            padding-top: 13px;
+            border-top: 1px solid rgba(255, 255, 255, 0.14);
+        }
+        .stat-line {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+            margin: 7px 0;
+            font-size: 13px;
+        }
+        .stat-label { color: #90a4ae; }
+        .stat-value {
+            font-family: Menlo, Consolas, monospace;
+            font-weight: bold;
+            text-align: right;
+        }
+        .eastward { color: #69f0ae; }
+        .westward { color: #ff6b6b; }
+        .stationary { color: #ffd54f; }
+        .hint {
+            margin-top: 12px !important;
+            color: #ffd54f !important;
+            font-size: 11px !important;
+            font-style: italic;
+        }
+        #button-panel {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 8px;
+            transform: translateX(-50%);
+            z-index: 10;
+        }
+        button {
+            padding: 9px 14px;
+            color: white;
+            background: rgba(10, 18, 35, 0.92);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 8px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: background 0.2s ease, border-color 0.2s ease, transform 0.1s ease;
+        }
+        button:hover {
+            background: rgba(35, 60, 95, 0.95);
+            border-color: rgba(79, 195, 247, 0.7);
+        }
+        button:active { transform: translateY(1px); }
+        .label {
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+            text-shadow: 0 0 4px black, 0 0 8px black;
+            pointer-events: none;
+        }
+        @media (max-width: 700px) {
+            #info-panel { width: 330px; padding: 15px; }
+            #info-panel h1 { font-size: 17px; }
+            #info-panel p { font-size: 12px; }
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.7.9/dat.gui.min.js"></script>
+</head>
+<body>
+<div id="info-panel">
+    <h1>Jet Stream Rossby Waves</h1>
+    <p>
+        The coloured ribbon represents a simplified Northern Hemisphere jet stream.
+        The wave pattern propagates with phase speed <strong>c</strong>, while white tracer
+        particles move eastward with the background wind <strong>U</strong>.
+    </p>
+    <div class="equation">c = U − β / (k² + L<sub>D</sub><sup>−2</sup>)</div>
+    <div class="stats-container">
+        <div class="stat-line"><span class="stat-label">Background wind U:</span><span id="wind-speed-value" class="stat-value eastward">—</span></div>
+        <div class="stat-line"><span class="stat-label">Wave phase speed c:</span><span id="phase-speed-value" class="stat-value">—</span></div>
+        <div class="stat-line"><span class="stat-label">Relative motion U − c:</span><span id="relative-speed-value" class="stat-value">—</span></div>
+        <div class="stat-line"><span class="stat-label">Zonal wavenumber:</span><span id="wavenumber-value" class="stat-value">—</span></div>
+    </div>
+    <p class="hint">Use the North Pole View to see the classical circumpolar Rossby-wave pattern.</p>
+</div>
+
+<div id="button-panel">
+    <button id="north-pole-button">North Pole View</button>
+    <button id="angled-view-button">Angled View</button>
+    <button id="pause-button">Pause</button>
+    <button id="particles-button">Hide Particles</button>
+    <button id="axis-button">Hide Wave Axis</button>
+    <button id="labels-button">Hide Labels</button>
+    <button id="reset-button">Reset</button>
+</div>
+
+<script>
+"use strict";
+
+const params = {
+    beta: 2.3,
+    U: 0.50,
+    deformationRadius: 1.40,
+    wavenumber: 4,
+    amplitudeDegrees: 9,
+    centerLatitudeDegrees: 45,
+    jetHalfWidthDegrees: 5,
+    animationSpeed: 0.40,
+    particleSpeedFactor: 0.55,
+    showParticles: true,
+    showWaveAxis: true,
+    showLabels: true,
+    pause: false
+};
+
+const initialParams = { ...params };
+const EARTH_RADIUS = 2.0;
+const JET_ALTITUDE = 0.055;
+const WAVE_AXIS_ALTITUDE = 0.075;
+const PARTICLE_ALTITUDE = 0.095;
+const TWO_PI = Math.PI * 2;
+let simulationTime = 0;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x010207);
+
+const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 5.3, 4.5);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+document.body.appendChild(renderer.domElement);
+
+const labelRenderer = new THREE.CSS2DRenderer();
+labelRenderer.setSize(window.innerWidth, window.innerHeight);
+labelRenderer.domElement.style.position = "absolute";
+labelRenderer.domElement.style.top = "0";
+labelRenderer.domElement.style.left = "0";
+labelRenderer.domElement.style.pointerEvents = "none";
+document.body.appendChild(labelRenderer.domElement);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.055;
+controls.enablePan = false;
+controls.minDistance = 3.3;
+controls.maxDistance = 10;
+controls.target.set(0, 0.3, 0);
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.72));
+const sunlight = new THREE.DirectionalLight(0xffffff, 1.15);
+sunlight.position.set(6, 9, 7);
+scene.add(sunlight);
+const fillLight = new THREE.DirectionalLight(0x6fa8ff, 0.35);
+fillLight.position.set(-6, 2, -4);
+scene.add(fillLight);
+
+const textureLoader = new THREE.TextureLoader();
+const earthTexture = textureLoader.load("https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg");
+earthTexture.encoding = THREE.sRGBEncoding;
+
+const earth = new THREE.Mesh(
+    new THREE.SphereGeometry(EARTH_RADIUS, 96, 64),
+    new THREE.MeshPhongMaterial({ map: earthTexture, color: 0x7890a0, shininess: 8, specular: 0x17202a })
+);
+scene.add(earth);
+
+const atmosphere = new THREE.Mesh(
+    new THREE.SphereGeometry(EARTH_RADIUS * 1.018, 96, 64),
+    new THREE.MeshBasicMaterial({ color: 0x4d9dff, transparent: true, opacity: 0.075, side: THREE.BackSide })
+);
+scene.add(atmosphere);
+
+function sphericalToCartesian(radius, latitude, longitude) {
+    const cosLatitude = Math.cos(latitude);
+
+    // Three.js and the Earth texture use an orientation in which increasing
+    // mathematical longitude appears westward from the default polar view.
+    // Reverse the rendered longitude so positive U and positive phase speed
+    // are displayed visually as eastward motion.
+    const renderedLongitude = -longitude;
+
+    return new THREE.Vector3(
+        radius * cosLatitude * Math.cos(renderedLongitude),
+        radius * Math.sin(latitude),
+        radius * cosLatitude * Math.sin(renderedLongitude)
+    );
+}
+
+const referenceLatitudeMaterial = new THREE.LineDashedMaterial({
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.32,
+    dashSize: 0.045,
+    gapSize: 0.03
+});
+let referenceLatitudeLine = null;
+
+function createReferenceLatitudeLine() {
+    if (referenceLatitudeLine !== null) {
+        scene.remove(referenceLatitudeLine);
+        referenceLatitudeLine.geometry.dispose();
+    }
+    const points = [];
+    const latitude = THREE.MathUtils.degToRad(params.centerLatitudeDegrees);
+    const radius = EARTH_RADIUS + 0.022;
+    for (let i = 0; i <= 360; i++) {
+        const longitude = (i / 360) * TWO_PI;
+        points.push(sphericalToCartesian(radius, latitude, longitude));
+    }
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    referenceLatitudeLine = new THREE.Line(geometry, referenceLatitudeMaterial);
+    referenceLatitudeLine.computeLineDistances();
+    scene.add(referenceLatitudeLine);
+}
+
+const LONGITUDE_SEGMENTS = 360;
+const WIDTH_SEGMENTS = 16;
+const ribbonVertexCount = (LONGITUDE_SEGMENTS + 1) * (WIDTH_SEGMENTS + 1);
+const ribbonPositions = new Float32Array(ribbonVertexCount * 3);
+const ribbonColors = new Float32Array(ribbonVertexCount * 3);
+const ribbonIndices = [];
+
+for (let i = 0; i < LONGITUDE_SEGMENTS; i++) {
+    for (let j = 0; j < WIDTH_SEGMENTS; j++) {
+        const rowLength = WIDTH_SEGMENTS + 1;
+        const a = i * rowLength + j;
+        const b = (i + 1) * rowLength + j;
+        const c = (i + 1) * rowLength + j + 1;
+        const d = i * rowLength + j + 1;
+        ribbonIndices.push(a, b, d, b, c, d);
+    }
+}
+
+const ribbonGeometry = new THREE.BufferGeometry();
+ribbonGeometry.setAttribute("position", new THREE.BufferAttribute(ribbonPositions, 3));
+ribbonGeometry.setAttribute("color", new THREE.BufferAttribute(ribbonColors, 3));
+ribbonGeometry.setIndex(ribbonIndices);
+
+const jetRibbon = new THREE.Mesh(
+    ribbonGeometry,
+    new THREE.MeshPhongMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.82,
+        side: THREE.DoubleSide,
+        shininess: 45,
+        specular: 0xffffff,
+        depthWrite: false
+    })
+);
+jetRibbon.renderOrder = 2;
+scene.add(jetRibbon);
+
+const axisPositions = new Float32Array((LONGITUDE_SEGMENTS + 1) * 3);
+const axisGeometry = new THREE.BufferGeometry();
+axisGeometry.setAttribute("position", new THREE.BufferAttribute(axisPositions, 3));
+const waveAxis = new THREE.Line(
+    axisGeometry,
+    new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 })
+);
+waveAxis.renderOrder = 3;
+scene.add(waveAxis);
+
+const PARTICLE_COUNT = 420;
+const particlePositions = new Float32Array(PARTICLE_COUNT * 3);
+const particleGeometry = new THREE.BufferGeometry();
+particleGeometry.setAttribute("position", new THREE.BufferAttribute(particlePositions, 3));
+const particleSystem = new THREE.Points(
+    particleGeometry,
+    new THREE.PointsMaterial({
+        color: 0xffffff,
+        size: 0.038,
+        sizeAttenuation: true,
+        transparent: true,
+        opacity: 0.92,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+    })
+);
+particleSystem.renderOrder = 4;
+scene.add(particleSystem);
+
+const particleData = [];
+function initializeParticles() {
+    particleData.length = 0;
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+        particleData.push({
+            initialLongitude: Math.random() * TWO_PI,
+            crossJetPosition: (Math.random() - 0.5) * 2,
+            speedVariation: 0.82 + Math.random() * 0.36,
+            sizePhase: Math.random() * TWO_PI
+        });
+    }
+}
+initializeParticles();
+
+function createTextLabel(text) {
+    const element = document.createElement("div");
+    element.className = "label";
+    element.textContent = text;
+    return new THREE.CSS2DObject(element);
+}
+const ridgeLabel = createTextLabel("Ridge");
+const troughLabel = createTextLabel("Trough");
+scene.add(ridgeLabel, troughLabel);
+
+function calculatePhaseSpeed() {
+    // At k = 0 there is no propagating Rossby-wave pattern, only a zonally
+    // symmetric jet. Phase speed is therefore not defined; zero is returned
+    // solely to keep the animation and diagnostics numerically stable.
+    if (params.wavenumber === 0) {
+        return 0;
+    }
+
+    const kSquared = params.wavenumber * params.wavenumber;
+    const deformationTerm = 1 / (params.deformationRadius * params.deformationRadius);
+    return params.U - params.beta / (kSquared + deformationTerm);
+}
+
+function calculateWavePhase(longitude, phaseSpeed) {
+    return params.wavenumber * longitude - params.wavenumber * phaseSpeed * simulationTime;
+}
+
+function calculateJetCenterLatitude(longitude, phaseSpeed) {
+    const centerLatitude = THREE.MathUtils.degToRad(params.centerLatitudeDegrees);
+
+    if (params.wavenumber === 0) {
+        return centerLatitude;
+    }
+
+    const amplitude = THREE.MathUtils.degToRad(params.amplitudeDegrees);
+    return centerLatitude + amplitude * Math.sin(calculateWavePhase(longitude, phaseSpeed));
+}
+
+const ribbonColor = new THREE.Color();
+function updateJetRibbon(phaseSpeed) {
+    const positionAttribute = ribbonGeometry.attributes.position;
+    const colorAttribute = ribbonGeometry.attributes.color;
+    const halfWidth = THREE.MathUtils.degToRad(params.jetHalfWidthDegrees);
+    const amplitude = THREE.MathUtils.degToRad(Math.max(params.amplitudeDegrees, 0.001));
+    let vertexIndex = 0;
+
+    for (let i = 0; i <= LONGITUDE_SEGMENTS; i++) {
+        const longitude = (i / LONGITUDE_SEGMENTS) * TWO_PI;
+        const centerLatitude = calculateJetCenterLatitude(longitude, phaseSpeed);
+        const displacement = centerLatitude - THREE.MathUtils.degToRad(params.centerLatitudeDegrees);
+        const normalizedDisplacement = params.wavenumber === 0
+            ? 0
+            : THREE.MathUtils.clamp(displacement / amplitude, -1, 1);
+
+        for (let j = 0; j <= WIDTH_SEGMENTS; j++) {
+            const signedWidth = (j / WIDTH_SEGMENTS - 0.5) * 2;
+            const latitude = centerLatitude + signedWidth * halfWidth;
+            const edgeFade = Math.pow(Math.cos(signedWidth * Math.PI * 0.5), 0.75);
+            const radius = EARTH_RADIUS + JET_ALTITUDE + 0.008 * edgeFade;
+            const point = sphericalToCartesian(radius, latitude, longitude);
+            positionAttribute.setXYZ(vertexIndex, point.x, point.y, point.z);
+
+            const colorPosition = (normalizedDisplacement + 1) / 2;
+            const hue = THREE.MathUtils.lerp(0.63, 0.01, colorPosition);
+            const lightness = 0.24 + 0.24 * edgeFade;
+            ribbonColor.setHSL(hue, 0.92, lightness);
+            colorAttribute.setXYZ(vertexIndex, ribbonColor.r, ribbonColor.g, ribbonColor.b);
+            vertexIndex++;
+        }
+    }
+    positionAttribute.needsUpdate = true;
+    colorAttribute.needsUpdate = true;
+    ribbonGeometry.computeVertexNormals();
+    ribbonGeometry.computeBoundingSphere();
+}
+
+function updateWaveAxis(phaseSpeed) {
+    const positionAttribute = axisGeometry.attributes.position;
+    for (let i = 0; i <= LONGITUDE_SEGMENTS; i++) {
+        const longitude = (i / LONGITUDE_SEGMENTS) * TWO_PI;
+        const latitude = calculateJetCenterLatitude(longitude, phaseSpeed);
+        const point = sphericalToCartesian(EARTH_RADIUS + WAVE_AXIS_ALTITUDE, latitude, longitude);
+        positionAttribute.setXYZ(i, point.x, point.y, point.z);
+    }
+    positionAttribute.needsUpdate = true;
+    axisGeometry.computeBoundingSphere();
+}
+
+function updateParticles(phaseSpeed) {
+    const positionAttribute = particleGeometry.attributes.position;
+    const jetHalfWidth = THREE.MathUtils.degToRad(params.jetHalfWidthDegrees);
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+        const particle = particleData[i];
+        const longitude = particle.initialLongitude + params.U * params.particleSpeedFactor * particle.speedVariation * simulationTime;
+        const jetCenterLatitude = calculateJetCenterLatitude(longitude, phaseSpeed);
+        const crossJetOffset = particle.crossJetPosition * jetHalfWidth * 0.80;
+        const smallOscillation = THREE.MathUtils.degToRad(0.35) * Math.sin(particle.sizePhase + simulationTime * 1.8);
+        const latitude = jetCenterLatitude + crossJetOffset + smallOscillation;
+        const point = sphericalToCartesian(EARTH_RADIUS + PARTICLE_ALTITUDE, latitude, longitude);
+        positionAttribute.setXYZ(i, point.x, point.y, point.z);
+    }
+    positionAttribute.needsUpdate = true;
+    particleGeometry.computeBoundingSphere();
+}
+
+function updateLabels(phaseSpeed) {
+    if (params.wavenumber === 0) {
+        ridgeLabel.visible = false;
+        troughLabel.visible = false;
+        return;
+    }
+
+    const phaseOffset = phaseSpeed * simulationTime;
+    const ridgeLongitude = (phaseOffset + Math.PI / (2 * params.wavenumber)) % TWO_PI;
+    const troughLongitude = (phaseOffset + 3 * Math.PI / (2 * params.wavenumber)) % TWO_PI;
+    const ridgeLatitude = calculateJetCenterLatitude(ridgeLongitude, phaseSpeed);
+    const troughLatitude = calculateJetCenterLatitude(troughLongitude, phaseSpeed);
+    ridgeLabel.position.copy(sphericalToCartesian(EARTH_RADIUS + 0.18, ridgeLatitude, ridgeLongitude));
+    troughLabel.position.copy(sphericalToCartesian(EARTH_RADIUS + 0.18, troughLatitude, troughLongitude));
+    ridgeLabel.visible = params.showLabels;
+    troughLabel.visible = params.showLabels;
+}
+
+function updateDiagnostics(phaseSpeed) {
+    const windElement = document.getElementById("wind-speed-value");
+    const phaseElement = document.getElementById("phase-speed-value");
+    const relativeElement = document.getElementById("relative-speed-value");
+    const wavenumberElement = document.getElementById("wavenumber-value");
+
+    windElement.textContent = `${params.U.toFixed(3)} → Eastward`;
+    wavenumberElement.textContent = `k = ${params.wavenumber}`;
+    phaseElement.className = "stat-value";
+
+    if (params.wavenumber === 0) {
+        phaseElement.textContent = "No wave — zonal jet";
+        phaseElement.classList.add("stationary");
+        relativeElement.textContent = `${params.U.toFixed(3)} → Zonal airflow`;
+        return;
+    }
+
+    const relativeSpeed = params.U - phaseSpeed;
+    relativeElement.textContent = relativeSpeed >= 0
+        ? `${relativeSpeed.toFixed(3)} → Through wave`
+        : `${Math.abs(relativeSpeed).toFixed(3)} ← Relative`;
+
+    if (Math.abs(phaseSpeed) < 0.015) {
+        phaseElement.textContent = `${phaseSpeed.toFixed(3)} Stationary`;
+        phaseElement.classList.add("stationary");
+    } else if (phaseSpeed > 0) {
+        phaseElement.textContent = `${phaseSpeed.toFixed(3)} → Eastward`;
+        phaseElement.classList.add("eastward");
+    } else {
+        phaseElement.textContent = `${Math.abs(phaseSpeed).toFixed(3)} ← Westward`;
+        phaseElement.classList.add("westward");
+    }
+}
+
+function updateSimulation() {
+    const phaseSpeed = calculatePhaseSpeed();
+    updateJetRibbon(phaseSpeed);
+    updateWaveAxis(phaseSpeed);
+    updateParticles(phaseSpeed);
+    updateLabels(phaseSpeed);
+    updateDiagnostics(phaseSpeed);
+    particleSystem.visible = params.showParticles;
+    waveAxis.visible = params.showWaveAxis;
+}
+
+const gui = new dat.GUI({ width: 320 });
+const physicsFolder = gui.addFolder("Rossby-Wave Physics");
+physicsFolder.add(params, "beta", 0.2, 5.0, 0.1).name("Beta parameter β");
+physicsFolder.add(params, "U", 0.05, 1.20, 0.01).name("Background wind U");
+physicsFolder.add(params, "deformationRadius", 0.4, 3.5, 0.05).name("Deformation radius");
+physicsFolder.open();
+
+const waveFolder = gui.addFolder("Wave Configuration");
+waveFolder.add(params, "wavenumber", 0, 8, 1).name("Wavenumber k");
+waveFolder.add(params, "amplitudeDegrees", 1, 18, 0.5).name("Amplitude [degrees]");
+waveFolder.add(params, "centerLatitudeDegrees", 25, 70, 1).name("Mean latitude [°N]").onChange(createReferenceLatitudeLine);
+waveFolder.add(params, "jetHalfWidthDegrees", 2, 10, 0.5).name("Jet half-width [°]");
+waveFolder.open();
+
+const animationFolder = gui.addFolder("Animation");
+animationFolder.add(params, "animationSpeed", 0.05, 1.5, 0.05).name("Simulation speed");
+animationFolder.add(params, "particleSpeedFactor", 0.1, 1.5, 0.05).name("Tracer speed scale");
+animationFolder.open();
+
+const pauseButton = document.getElementById("pause-button");
+const particlesButton = document.getElementById("particles-button");
+const axisButton = document.getElementById("axis-button");
+const labelsButton = document.getElementById("labels-button");
+
+document.getElementById("north-pole-button").addEventListener("click", () => {
+    camera.position.set(0, 7.2, 0.001);
+    controls.target.set(0, 0, 0);
+    controls.update();
+});
+
+document.getElementById("angled-view-button").addEventListener("click", () => {
+    camera.position.set(0, 5.3, 4.5);
+    controls.target.set(0, 0.3, 0);
+    controls.update();
+});
+
+pauseButton.addEventListener("click", () => {
+    params.pause = !params.pause;
+    pauseButton.textContent = params.pause ? "Resume" : "Pause";
+});
+
+particlesButton.addEventListener("click", () => {
+    params.showParticles = !params.showParticles;
+    particlesButton.textContent = params.showParticles ? "Hide Particles" : "Show Particles";
+});
+
+axisButton.addEventListener("click", () => {
+    params.showWaveAxis = !params.showWaveAxis;
+    axisButton.textContent = params.showWaveAxis ? "Hide Wave Axis" : "Show Wave Axis";
+});
+
+labelsButton.addEventListener("click", () => {
+    params.showLabels = !params.showLabels;
+    labelsButton.textContent = params.showLabels ? "Hide Labels" : "Show Labels";
+});
+
+document.getElementById("reset-button").addEventListener("click", () => {
+    Object.keys(initialParams).forEach(key => { params[key] = initialParams[key]; });
+    simulationTime = 0;
+    params.pause = false;
+    params.showParticles = true;
+    params.showWaveAxis = true;
+    params.showLabels = true;
+    pauseButton.textContent = "Pause";
+    particlesButton.textContent = "Hide Particles";
+    axisButton.textContent = "Hide Wave Axis";
+    labelsButton.textContent = "Hide Labels";
+    camera.position.set(0, 5.3, 4.5);
+    controls.target.set(0, 0.3, 0);
+    createReferenceLatitudeLine();
+    initializeParticles();
+    gui.updateDisplay();
+    controls.update();
+});
+
+window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    labelRenderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+const clock = new THREE.Clock();
+function animate() {
+    requestAnimationFrame(animate);
+    const deltaTime = Math.min(clock.getDelta(), 0.05);
+    if (!params.pause) {
+        simulationTime += deltaTime * params.animationSpeed;
+    }
+    updateSimulation();
+    controls.update();
+    renderer.render(scene, camera);
+    labelRenderer.render(scene, camera);
+}
+
+createReferenceLatitudeLine();
+updateSimulation();
+animate();
+</script>
+</body>
+</html>
